@@ -174,16 +174,18 @@ INTERVIEW_QUESTIONS = [
 # ═══════════════════════════════════════════════════════════════════════════
 #  MULTIPLAYER GAME ROOMS
 # ═══════════════════════════════════════════════════════════════════════════
-# rooms[code] = {
-#   'host': chat_id,
-#   'players': {chat_id: {'name': str, 'score': int, 'answered': int}},
-#   'questions': [...],
-#   'q_idx': int,
-#   'active': bool,
-#   'answered_this_round': set(),
-# }
+import threading
+
 game_rooms   = {}
 player_rooms = {}  # chat_id -> room_code
+
+# Answer button colors/shapes per option
+ANSWER_STYLES = [
+    ("🔴", "A"),
+    ("🔵", "B"),
+    ("🟢", "C"),
+    ("🟡", "D"),
+]
 
 def gen_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
@@ -202,33 +204,66 @@ def rank_emoji(i):
 
 def title_for_score(score, total):
     pct = score / total if total else 0
-    if pct == 1.0: return '🏆 Legend!'
-    if pct >= 0.8: return '🔥 Pro!'
-    if pct >= 0.5: return '💪 Rising Star!'
-    return '📚 Keep Learning!'
+    if pct == 1.0:   return '🏆 LEGEND!'
+    if pct >= 0.8:   return '🔥 Pro Player!'
+    if pct >= 0.5:   return '💪 Rising Star!'
+    if pct >= 0.3:   return '📚 Keep Grinding!'
+    return '🐣 Just Getting Started!'
 
-def broadcast_room(code, text, markup=None, exclude=None):
+def score_bar(score, total):
+    filled = round((score / total) * 10) if total else 0
+    return '█' * filled + '░' * (10 - filled)
+
+def broadcast_room(code, text, markup=None, exclude=None, parse_mode="Markdown"):
     room = game_rooms.get(code)
     if not room: return
     for cid in list(room['players']):
         if exclude and cid == exclude: continue
         try:
             if markup:
-                bot.send_message(cid, text, reply_markup=markup)
+                bot.send_message(cid, text, parse_mode=parse_mode, reply_markup=markup)
             else:
-                bot.send_message(cid, text)
+                bot.send_message(cid, text, parse_mode=parse_mode)
         except Exception:
             pass
 
+def colored_abcd_btn(options, prefix):
+    """Colorful A/B/C/D buttons."""
+    m = types.InlineKeyboardMarkup(row_width=2)
+    btns = []
+    for i, opt in enumerate(options):
+        color, letter = ANSWER_STYLES[i]
+        label = f"{color} {letter}  {opt[:22]}"
+        btns.append(types.InlineKeyboardButton(label, callback_data=f"{prefix}:{i}"))
+    m.add(*btns)
+    return m
+
+def leave_btn(code):
+    m = types.InlineKeyboardMarkup(row_width=2)
+    m.add(types.InlineKeyboardButton("🚪 Leave Game", callback_data=f'game_leave:{code}'))
+    return m
+
+def question_with_leave_btn(options, prefix, code):
+    m = types.InlineKeyboardMarkup(row_width=2)
+    btns = []
+    for i, opt in enumerate(options):
+        color, letter = ANSWER_STYLES[i]
+        label = f"{color} {letter}  {opt[:22]}"
+        btns.append(types.InlineKeyboardButton(label, callback_data=f"{prefix}:{i}"))
+    m.add(*btns)
+    m.add(types.InlineKeyboardButton("🚪 Leave Game", callback_data=f'game_leave:{code}'))
+    return m
+
 def send_leaderboard(code):
-    """Send leaderboard after each question."""
     room = game_rooms.get(code)
     if not room: return
     players = sorted(room['players'].items(), key=lambda x: -x[1]['score'])
-    total_q = room['q_idx']  # questions done so far
-    lines = [f"📊 *Leaderboard — after Q{total_q}:*\n"]
+    q_done  = room['q_idx']
+    total   = len(room['questions'])
+    lines   = [f"📊 *Leaderboard — Q{q_done}/{total}*\n{'─'*20}"]
     for i, (cid, p) in enumerate(players):
-        lines.append(f"{rank_emoji(i)} {p['name']} — {p['score']} pts")
+        bar = score_bar(p['score'], q_done) if q_done > 0 else '░░░░░░░░░░'
+        lines.append(f"{rank_emoji(i)} *{p['name']}*\n    {bar} {p['score']} pts")
     broadcast_room(code, '\n'.join(lines))
 
 def send_game_question(code):
@@ -239,30 +274,56 @@ def send_game_question(code):
     if idx >= len(questions):
         end_game(code)
         return
-    q = questions[idx]
+    q     = questions[idx]
     total = len(questions)
     room['answered_this_round'] = set()
-    room['timer_active'] = True
-    m = abcd_btn(q['options'], f'game_ans:{code}')
-    broadcast_room(code, f"*Q{idx+1}/{total}*\n\n{q['q']}\n\n⏱️ 30 seconds!", markup=m)
+    room['timer_active']        = True
+    room['timer_start']         = time.time()
 
-    # 30-second timer in background thread
-    import threading
+    m = question_with_leave_btn(q['options'], f'game_ans:{code}', code)
+    broadcast_room(code,
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"❓ *Q{idx+1} / {total}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{q['q']}\n\n"
+        f"⏱️ *30 seconds!*",
+        markup=m)
+
+    # Live countdown updates: 20s, 10s, 5s
+    def countdown_updates():
+        for remaining in [20, 10, 5]:
+            time.sleep(30 - remaining)
+            r = game_rooms.get(code)
+            if not r or not r.get('timer_active'): return
+            if r['q_idx'] != idx: return
+            unanswered = len(r['players']) - len(r['answered_this_round'])
+            if unanswered > 0:
+                broadcast_room(code, f"⏰ *{remaining} seconds left!* ({unanswered} still answering...)")
+
+    threading.Thread(target=countdown_updates, daemon=True).start()
+
+    # Main 30s timer
     def timer_end():
         time.sleep(30)
         r = game_rooms.get(code)
         if not r or not r.get('timer_active'): return
-        if r['q_idx'] != idx: return  # already moved on
-        # Time's up — show who didn't answer
+        if r['q_idx'] != idx: return
         missed = [p['name'] for cid, p in r['players'].items()
                   if cid not in r['answered_this_round']]
-        if missed:
-            broadcast_room(code, f"⏰ Time's up! No answer from: {', '.join(missed)}")
-        r['q_idx'] += 1
         r['timer_active'] = False
-        send_leaderboard(code)
+        correct_idx = q['answer']
+        color, letter = ANSWER_STYLES[correct_idx]
+        broadcast_room(code,
+            f"⏰ *Time's up!*\n\n"
+            f"✅ Answer: {color} {letter} — {q['options'][correct_idx]}\n"
+            f"💡 {q['tip']}"
+            + (f"\n\n😴 No answer from: {', '.join(missed)}" if missed else ""))
+        r['q_idx'] += 1
         time.sleep(2)
+        send_leaderboard(code)
+        time.sleep(3)
         send_game_question(code)
+
     threading.Thread(target=timer_end, daemon=True).start()
 
 def end_game(code):
@@ -271,14 +332,36 @@ def end_game(code):
     room['active'] = False
     players = sorted(room['players'].items(), key=lambda x: -x[1]['score'])
     total   = len(room['questions'])
-    lines   = ["🏁 *Game Over! Final Scores:*\n"]
+
+    lines = [
+        "🎮 ═══════════════════ 🎮",
+        "        🏁 *GAME OVER!* 🏁",
+        "🎮 ═══════════════════ 🎮\n",
+        f"📋 *Final Standings — {total} Questions*\n",
+    ]
+    medals = {0:"🥇 WINNER", 1:"🥈 2nd Place", 2:"🥉 3rd Place"}
     for i, (cid, p) in enumerate(players):
-        lines.append(f"{rank_emoji(i)} {p['name']} — {p['score']}/{total} {title_for_score(p['score'], total)}")
+        title  = medals.get(i, f"  {i+1}.")
+        bar    = score_bar(p['score'], total)
+        pct    = round(p['score'] / total * 100) if total else 0
+        badge  = title_for_score(p['score'], total)
+        lines.append(
+            f"{title} *{p['name']}*\n"
+            f"    {bar} {p['score']}/{total} ({pct}%)\n"
+            f"    {badge}\n"
+        )
+
+    # MVP shoutout
+    if players:
+        winner_name = players[0][1]['name']
+        lines.append(f"🌟 *MVP: {winner_name}* — Respect! 🙌")
+
     result = '\n'.join(lines)
     m = types.InlineKeyboardMarkup()
-    m.add(types.InlineKeyboardButton("🏠 Menu", callback_data='menu'))
+    m.add(types.InlineKeyboardButton("🔄 Play Again!", callback_data='python_create'))
+    m.add(types.InlineKeyboardButton("🏠 Menu",        callback_data='menu'))
     broadcast_room(code, result, markup=m)
-    # cleanup
+
     for cid in list(room['players']):
         player_rooms.pop(cid, None)
         user_states.pop(cid, None)
@@ -365,11 +448,24 @@ def sd_topic_menu():
 def python_mode_menu():
     m = types.InlineKeyboardMarkup(row_width=1)
     m.add(
-        types.InlineKeyboardButton("👤 Solo — Practice alone", callback_data='python_solo'),
+        types.InlineKeyboardButton("👤 Solo — Practice alone",   callback_data='python_solo'),
         types.InlineKeyboardButton("🎮 Create Multiplayer Game", callback_data='python_create'),
-        types.InlineKeyboardButton("🔗 Join a Game", callback_data='python_join'),
-        types.InlineKeyboardButton("🏠 Menu", callback_data='menu'),
+        types.InlineKeyboardButton("🔗 Join a Game",             callback_data='python_join'),
+        types.InlineKeyboardButton("🏠 Menu",                    callback_data='menu'),
     )
+    return m
+
+def player_count_menu():
+    m = types.InlineKeyboardMarkup(row_width=3)
+    m.add(
+        types.InlineKeyboardButton("2️⃣", callback_data='game_setplayers:2'),
+        types.InlineKeyboardButton("3️⃣", callback_data='game_setplayers:3'),
+        types.InlineKeyboardButton("4️⃣", callback_data='game_setplayers:4'),
+        types.InlineKeyboardButton("5️⃣", callback_data='game_setplayers:5'),
+        types.InlineKeyboardButton("6️⃣", callback_data='game_setplayers:6'),
+        types.InlineKeyboardButton("🔟", callback_data='game_setplayers:10'),
+    )
+    m.add(types.InlineKeyboardButton("🏠 Menu", callback_data='menu'))
     return m
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -486,9 +582,17 @@ def handle_callbacks(call):
 
     # ── Create Multiplayer ──
     if data == 'python_create':
-        code = gen_code()
-        name = get_display_name(c)
-        qs   = random.sample(ALL_QUESTIONS, min(10, len(ALL_QUESTIONS)))
+        bot.send_message(c,
+            "🎮 *Create a Game*\n\nHow many players? (including you)\nGame auto-starts when everyone joins!",
+            parse_mode="Markdown",
+            reply_markup=player_count_menu())
+        return
+
+    if data.startswith('game_setplayers:'):
+        max_p = int(data.split(':')[1])
+        code  = gen_code()
+        name  = get_display_name(c)
+        qs    = random.sample(ALL_QUESTIONS, min(10, len(ALL_QUESTIONS)))
         game_rooms[code] = {
             'host': c,
             'players': {c: {'name': name, 'score': 0, 'answered': 0}},
@@ -496,20 +600,22 @@ def handle_callbacks(call):
             'q_idx': 0,
             'active': False,
             'answered_this_round': set(),
+            'max_players': max_p,
+            'timer_active': False,
         }
         player_rooms[c] = code
         user_states[c]  = 'GAME_LOBBY'
         m = types.InlineKeyboardMarkup()
-        m.add(types.InlineKeyboardButton("🚀 Start Game!", callback_data=f'game_start:{code}'))
-        m.add(types.InlineKeyboardButton("❌ Cancel",       callback_data='game_cancel'))
+        m.add(types.InlineKeyboardButton("🚀 Start Now (don't wait)", callback_data=f'game_start:{code}'))
+        m.add(types.InlineKeyboardButton("❌ Cancel Game",             callback_data='game_cancel'))
         bot.send_message(c,
-            f"🎮 *Game created!*\n\n"
-            f"Share this code with friends:\n"
-            f"┌─────────────┐\n"
-            f"│  *{code}*  │\n"
-            f"└─────────────┘\n\n"
-            f"Players joined: 1 (you)\n"
-            f"Press *Start* when everyone is in!",
+            f"🎮 *Game Created!*\n\n"
+            f"┌─────────────────┐\n"
+            f"│   🎯 Code: *{code}*   │\n"
+            f"└─────────────────┘\n\n"
+            f"👥 Waiting for *{max_p}* players...\n"
+            f"🟢 Joined: 1/{max_p} (you)\n\n"
+            f"Share the code — game starts automatically when {max_p} players join!",
             parse_mode="Markdown", reply_markup=m)
         return
 
@@ -517,14 +623,15 @@ def handle_callbacks(call):
         code = data.split(':')[1]
         room = game_rooms.get(code)
         if not room or room['host'] != c: return
-        if len(room['players']) < 1:
-            bot.send_message(c, "⚠️ Need at least 1 player!")
-            return
         room['active'] = True
-        n = len(room['players'])
+        n     = len(room['players'])
         names = ', '.join(p['name'] for p in room['players'].values())
-        broadcast_room(code, f"🚀 *Game starts!*\n👥 {n} players: {names}\n\n10 questions. Good luck! 🍀")
-        time.sleep(1)
+        broadcast_room(code,
+            f"🚀 *Game Starting!*\n\n"
+            f"👥 *{n} players:* {names}\n"
+            f"📝 *10 questions* — 30 sec each\n\n"
+            f"Good luck everyone! 🍀")
+        time.sleep(2)
         send_game_question(code)
         return
 
@@ -537,13 +644,73 @@ def handle_callbacks(call):
                 user_states.pop(cid, None)
             game_rooms.pop(code, None)
         user_states[c] = None
-        bot.send_message(c, "Cancelled.", reply_markup=back_btn())
+        bot.send_message(c, "Game cancelled.", reply_markup=back_btn())
+        return
+
+    if data.startswith('game_leave:'):
+        code = data.split(':')[1]
+        room = game_rooms.get(code)
+        if not room: return
+        name = room['players'].get(c, {}).get('name', 'Someone')
+        # Remove player
+        room['players'].pop(c, None)
+        player_rooms.pop(c, None)
+        user_states[c] = None
+        bot.send_message(c, "👋 You left the game. See you next time!", reply_markup=back_btn())
+        if not room['players']:
+            # No players left
+            game_rooms.pop(code, None)
+            return
+        broadcast_room(code, f"👋 *{name}* left the game. ({len(room['players'])} remaining)")
+        # If host left, assign new host
+        if c == room['host']:
+            new_host = next(iter(room['players']))
+            room['host'] = new_host
+            bot.send_message(new_host, "👑 You are now the host!")
         return
 
     # ── Join Multiplayer ──
     if data == 'python_join':
         user_states[c] = 'JOIN_WAIT'
         bot.send_message(c, "🔗 Type the 5-letter game code:")
+        return
+
+    # ── Leave Game ──
+    if data.startswith('game_leave:'):
+        code = data.split(':')[1]
+        room = game_rooms.get(code)
+        if room and c in room['players']:
+            name = room['players'][c]['name']
+            del room['players'][c]
+            player_rooms.pop(c, None)
+            user_states[c] = None
+            bot.send_message(c, "👋 You left the game.\nSee you next time!", reply_markup=back_btn())
+            if room['players']:
+                broadcast_room(code, f"⚠️ *{name}* left the game. ({len(room['players'])} players remaining)")
+                # If host left, assign new host
+                if room['host'] == c:
+                    new_host = next(iter(room['players']))
+                    room['host'] = new_host
+                    bot.send_message(new_host, "👑 You are now the host!")
+            else:
+                # No players left — close room
+                game_rooms.pop(code, None)
+        else:
+            user_states[c] = None
+            bot.send_message(c, "🏠 Back to menu.", reply_markup=back_btn())
+        return
+
+    # ── Stop Game (host only) ──
+    if data.startswith('game_stop:'):
+        code = data.split(':')[1]
+        room = game_rooms.get(code)
+        if room and room.get('host') == c:
+            room['timer_active'] = False
+            broadcast_room(code, "🛑 *Host stopped the game.*", markup=back_btn())
+            for cid in list(room['players']):
+                player_rooms.pop(cid, None)
+                user_states.pop(cid, None)
+            game_rooms.pop(code, None)
         return
 
     # ── Game Answer ──
@@ -558,22 +725,35 @@ def handle_callbacks(call):
             bot.answer_callback_query(call.id, "⏳ Already answered!")
             return
         room['answered_this_round'].add(c)
-        q      = room['questions'][room['q_idx']]
-        labels = ["🅐","🅑","🅒","🅓"]
-        player = room['players'][c]
+        q           = room['questions'][room['q_idx']]
+        player      = room['players'][c]
         player['answered'] += 1
-        if chosen == q['answer']:
+        correct_idx        = q['answer']
+        color_c, letter_c  = ANSWER_STYLES[correct_idx]
+        color_a, letter_a  = ANSWER_STYLES[chosen]
+        if chosen == correct_idx:
             player['score'] += 1
-            bot.send_message(c, f"✅ Correct! +1 point 🎉\n{q['tip']}")
+            bot.send_message(c,
+                f"✅ *CORRECT!* +1 point 🎉\n\n"
+                f"{color_c} {letter_c} — {q['options'][correct_idx]}\n\n"
+                f"💡 {q['tip']}\n\n"
+                f"🏅 Your score: *{player['score']}*",
+                parse_mode="Markdown")
         else:
-            bot.send_message(c, f"❌ Wrong! Correct: {labels[q['answer']]} {q['options'][q['answer']]}\n{q['tip']}")
-        # All answered? Move on immediately (don't wait for timer)
+            bot.send_message(c,
+                f"❌ *Wrong!*\n\n"
+                f"You chose: {color_a} {letter_a} — {q['options'][chosen]}\n"
+                f"✅ Correct: {color_c} {letter_c} — {q['options'][correct_idx]}\n\n"
+                f"💡 {q['tip']}\n\n"
+                f"🏅 Your score: *{player['score']}*",
+                parse_mode="Markdown")
+        # All answered? Move on immediately
         if len(room['answered_this_round']) >= len(room['players']):
             room['timer_active'] = False
             room['q_idx'] += 1
             time.sleep(1)
             send_leaderboard(code)
-            time.sleep(2)
+            time.sleep(3)
             send_game_question(code)
         return
 
@@ -744,19 +924,35 @@ def handle_messages(message):
             room['players'][c] = {'name': name, 'score': 0, 'answered': 0}
             player_rooms[c]    = code
             user_states[c]     = 'GAME_LOBBY'
-            n = len(room['players'])
-            bot.send_message(c, f"✅ Joined game *{code}*!\nWaiting for host to start... ({n} players)", parse_mode="Markdown")
-            # Notify host
-            host = room['host']
-            m = types.InlineKeyboardMarkup()
-            m.add(types.InlineKeyboardButton("🚀 Start Game!", callback_data=f'game_start:{code}'))
-            m.add(types.InlineKeyboardButton("❌ Cancel",       callback_data='game_cancel'))
-            try:
-                bot.send_message(host,
-                    f"👋 *{name}* joined! ({n} players total)\nPress Start when ready!",
-                    parse_mode="Markdown", reply_markup=m)
-            except Exception:
-                pass
+            n       = len(room['players'])
+            max_p   = room.get('max_players', 99)
+            bot.send_message(c,
+                f"✅ Joined *{code}*!\n👥 {n}/{max_p} players\nWaiting for game to start...",
+                parse_mode="Markdown")
+            # Notify all players
+            broadcast_room(code,
+                f"👋 *{name}* joined! ({n}/{max_p})",
+                exclude=c)
+            # Auto-start if max players reached
+            if n >= max_p:
+                room['active'] = True
+                names = ', '.join(p['name'] for p in room['players'].values())
+                broadcast_room(code,
+                    f"🚀 *All {max_p} players joined!*\n👥 {names}\n\n🎮 Game starting NOW! Good luck! 🍀")
+                time.sleep(1)
+                threading.Thread(target=send_game_question, args=(code,), daemon=True).start()
+            else:
+                # Update host with start button
+                host = room['host']
+                m = types.InlineKeyboardMarkup()
+                m.add(types.InlineKeyboardButton("🚀 Start Now!", callback_data=f'game_start:{code}'))
+                m.add(types.InlineKeyboardButton("❌ Cancel",     callback_data='game_cancel'))
+                try:
+                    bot.send_message(host,
+                        f"👥 *{n}/{max_p}* players joined.\nWaiting for {max_p - n} more, or start now!",
+                        parse_mode="Markdown", reply_markup=m)
+                except Exception:
+                    pass
             return
 
         if state == 'CV':
