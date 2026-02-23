@@ -1,328 +1,297 @@
-import telebot
+import telebot, os, requests, tempfile, random, string, time
 from telebot import types
 from groq import Groq
-import requests
-import os
-import tempfile
 
-# pip install pytelegrambotapi groq pymupdf python-docx
-
-import os
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '8426423526:AAFIDVhSUfY19bmrDuPiDe-aTb4-9TdCmvg')
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '')
 GROQ_API_KEY   = os.environ.get('GROQ_API_KEY', '')
 
 bot    = telebot.TeleBot(TELEGRAM_TOKEN)
 client = Groq(api_key=GROQ_API_KEY)
 
-# ═══════════════════════════════════════════════════════════
-#  TEXTS
-# ═══════════════════════════════════════════════════════════
-TEXTS = {
-    'he': {
-        # UI
-        'welcome': (
-            "🎓 ברוך הבא ל-Hiring Hero!\n"
-            "הבוט שיהפוך אותך למתכנת שכל חברה רוצה לגייס.\n\n"
-            "בחר מה תרצה לעשות עכשיו:"
-        ),
-        'interview_btn':  "🎙️ ראיון דמה",
-        'task_btn':       "💻 בדיקת קוד",
-        'leetcode_btn':   "🧩 ליטקוד יומי",
-        'cv_btn':         "📄 ניתוח קורות חיים",
-        'jd_btn':         "🔍 מנתח משרות (JD)",
-        'python_btn':     "🐍 לימוד Python",
-        'sysdesign_btn':  "🏗️ System Design",
-        'lang_btn':       "🌐 עבור לאנגלית",
-        'menu_btn':       "🏠 תפריט ראשי",
+# ═══════════════════════════════════════════════════════════════════════════
+#  PYTHON QUIZ BANK
+# ═══════════════════════════════════════════════════════════════════════════
+ALL_QUESTIONS = [
+    # Variables & Types
+    {'q':'🐍 What is the output of `type(3.0)`?',
+     'options':["<class 'int'>","<class 'float'>","<class 'str'>","<class 'number'>"],'answer':1,
+     'tip':'3.0 has a decimal point → float.','cat':'Variables & Types'},
+    {'q':'🐍 Which is a valid variable name?',
+     'options':['2name','my-var','_my_var','my var'],'answer':2,
+     'tip':'Names can start with _ or a letter, not a digit or hyphen.','cat':'Variables & Types'},
+    {'q':'🐍 What type is `True`?',
+     'options':['str','int','bool','NoneType'],'answer':2,
+     'tip':'True and False are Python booleans (bool).','cat':'Variables & Types'},
+    {'q':'🐍 What does `int("7")` return?',
+     'options':['Error','7 (int)','7 (str)','0.7'],'answer':1,
+     'tip':'int() converts a string to an integer.','cat':'Variables & Types'},
+    # Lists & Dicts
+    {'q':'🐍 What does `[1,2,3][-1]` return?',
+     'options':['1','2','3','Error'],'answer':2,
+     'tip':'Negative index -1 returns the last element.','cat':'Lists & Dicts'},
+    {'q':'🐍 How to add a key to a dict?',
+     'options':['d.add("k",1)','d["k"]=1','d.insert("k",1)','d.put("k",1)'],'answer':1,
+     'tip':'Use d["key"] = value to add or update.','cat':'Lists & Dicts'},
+    {'q':'🐍 Which method removes the last list item?',
+     'options':['remove()','delete()','pop()','discard()'],'answer':2,
+     'tip':'list.pop() removes and returns the last item.','cat':'Lists & Dicts'},
+    {'q':'🐍 How to get all dict keys?',
+     'options':['d.values()','d.keys()','d.items()','d.all()'],'answer':1,
+     'tip':'d.keys() returns a view of all keys.','cat':'Lists & Dicts'},
+    # Functions
+    {'q':'🐍 What does `*args` do?',
+     'options':['Multiplies args','Keyword args only','Positional args (any number)','Makes args optional'],'answer':2,
+     'tip':'*args collects extra positional arguments into a tuple.','cat':'Functions'},
+    {'q':'🐍 What is a lambda?',
+     'options':['A loop','An anonymous function','A class method','A module'],'answer':1,
+     'tip':'lambda x: x+1 is a one-line anonymous function.','cat':'Functions'},
+    {'q':'🐍 What does `return` do without a value?',
+     'options':['Returns 0','Returns None','Raises error','Returns False'],'answer':1,
+     'tip':'A bare return statement returns None.','cat':'Functions'},
+    {'q':'🐍 What is a default argument?',
+     'options':['An arg that\'s always required','A value used if arg is not passed','A global variable','A keyword-only arg'],'answer':1,
+     'tip':'def greet(name="World") — name defaults to "World".','cat':'Functions'},
+    # OOP
+    {'q':'🐍 What is `self` in a class method?',
+     'options':['The class itself','The current instance','A global variable','A built-in'],'answer':1,
+     'tip':'self refers to the current object instance.','cat':'OOP'},
+    {'q':'🐍 Which keyword is used for inheritance?',
+     'options':['extends','inherits','class Child(Parent):','super'],'answer':2,
+     'tip':'class Dog(Animal): — parent goes in parentheses.','cat':'OOP'},
+    {'q':'🐍 What is `__init__`?',
+     'options':['A destructor','A constructor method','A class variable','A static method'],'answer':1,
+     'tip':'__init__ is called when a new object is created.','cat':'OOP'},
+    {'q':'🐍 What does `@staticmethod` mean?',
+     'options':['Method needs self','Method belongs to class, not instance','Method is private','Method is async'],'answer':1,
+     'tip':'Static methods don\'t receive self — they\'re like regular functions inside a class.','cat':'OOP'},
+    # Error Handling
+    {'q':'🐍 Which block always runs?',
+     'options':['try','except','else','finally'],'answer':3,
+     'tip':'finally always executes, with or without an exception.','cat':'Error Handling'},
+    {'q':'🐍 How to raise a custom error?',
+     'options':['error("msg")','throw ValueError("msg")','raise ValueError("msg")','except ValueError("msg")'],'answer':2,
+     'tip':'Use raise ExceptionType("message") to raise an exception.','cat':'Error Handling'},
+    {'q':'🐍 What exception for wrong key in dict?',
+     'options':['ValueError','IndexError','KeyError','TypeError'],'answer':2,
+     'tip':'d["missing"] → KeyError if the key doesn\'t exist.','cat':'Error Handling'},
+    {'q':'🐍 What exception for dividing by zero?',
+     'options':['ValueError','ZeroDivisionError','MathError','OverflowError'],'answer':1,
+     'tip':'1/0 raises ZeroDivisionError.','cat':'Error Handling'},
+    # Decorators
+    {'q':'🐍 What does a decorator do?',
+     'options':['Adds CSS','Wraps a function to extend behavior','Creates a class','Imports a module'],'answer':1,
+     'tip':'@decorator wraps a function, adding behavior before/after.','cat':'Decorators'},
+    {'q':'🐍 `@property` lets you...',
+     'options':['Define a static method','Access a method like an attribute','Create a class variable','Override __init__'],'answer':1,
+     'tip':'@property lets you call obj.name instead of obj.name().','cat':'Decorators'},
+]
 
-        # interview
-        'interview_start': "🏢 הראיון התחיל.\nשלום, אני המראיין שלך היום. ספר לי על פרויקט מעניין שעבדת עליו, או שנצלוח ישר לשאלות טכניות?",
-
-        # task
-        'task_prompt': "💻 שלח לי את הקוד של המטלה שלך ואני אבצע Code Review מקצועי.",
-
-        # cv
-        'cv_prompt':      "📄 שלח לי את קורות החיים שלך — טקסט חופשי, קובץ PDF, או קובץ Word (.docx)\nאני אנתח, אתן משוב מלא, ואציע שיפורים קונקרטיים.",
-        'cv_processing':  "⏳ מעבד את הקובץ...",
-        'cv_unsupported': "❌ פורמט לא נתמך. שלח PDF, DOCX, או טקסט.",
-        'cv_error_file':  "❌ לא הצלחתי לקרוא את הקובץ. נסה שוב.",
-
-        # jd analyzer
-        'jd_prompt':     "🔍 הדבק את טקסט המשרה (Job Description) שאתה מעוניין בה.\nאני אחלץ את ה-Keywords החשובים ואגיד לך בדיוק מה להדגיש בקורות החיים שלך כדי לעבור ATS.",
-        'jd_processing': "⏳ מנתח את המשרה...",
-
-        # leetcode
-        'leetcode_intro':        "🧩 מייצר שאלת LeetCode...",
-        'leetcode_submit':       "שלח את הפתרון שלך בקוד, ואני אעבור עליו ואתן משוב מפורט.",
-        'leetcode_solution_btn': "💡 הצג פתרון",
-        'leetcode_thinking':     "⏳ בודק את הפתרון שלך...",
-
-        # python
-        'python_intro':       "🐍 בחר נושא ללמידה:",
-        'python_topics': [
-            ("Variables & Types", "py_vars"),
-            ("Lists & Dicts",     "py_lists"),
-            ("Functions",         "py_funcs"),
-            ("OOP",               "py_oop"),
-            ("Decorators",        "py_deco"),
-            ("Async / Await",     "py_async"),
-            ("Generators",        "py_gen"),
-            ("Error Handling",    "py_errors"),
-        ],
-        'python_answer_prompt': "ענה על התרגיל בקוד Python:",
-        'python_next_btn':      "➡️ נושא הבא",
-
-        # system design
-        'sysdesign_intro': "🏗️ בחר מערכת לתכנן:",
-        'sysdesign_topics': [
-            ("WhatsApp / Chat",        "sd_chat"),
-            ("URL Shortener",          "sd_url"),
-            ("Instagram / Image Feed", "sd_insta"),
-            ("YouTube / Streaming",    "sd_video"),
-            ("Uber / Ride Sharing",    "sd_uber"),
-            ("Google Search",          "sd_search"),
-        ],
-        'sysdesign_thinking': "🏗️ מעבד את התשובה שלך...",
-
-        # AI systems
-        'interview_system': "You are a Senior Tech Interviewer at a Top-Tier company. Conduct the interview in Hebrew. Ask ONE question at a time, give a short critique, then ask the next.",
-        'task_system':      "Perform a professional code review. Check complexity, clean code, and bugs. Answer in Hebrew.",
-        'cv_system': (
-            "You are an expert CV analyst and writer for software engineers. "
-            "Do the following in Hebrew:\n"
-            "1. ANALYSIS: Identify strengths and weaknesses in the CV (structure, content, impact).\n"
-            "2. SCORE: Give an overall ATS score out of 10 with justification.\n"
-            "3. IMPROVEMENTS: List 5-7 specific, actionable improvements.\n"
-            "4. REWRITE: Rewrite the most important section (summary/experience) to be more impactful.\n"
-            "Use clear headers for each section."
-        ),
-        'jd_system': (
-            "You are an ATS and recruitment expert. Analyze the job description and do the following in Hebrew:\n"
-            "1. TOP KEYWORDS: Extract the 10-15 most important technical and soft-skill keywords the ATS will scan for.\n"
-            "2. MUST-HAVES: List required skills/experience the candidate must highlight.\n"
-            "3. NICE-TO-HAVES: List preferred skills that give a competitive edge.\n"
-            "4. CV TIPS: Give 4-5 specific tips on how to tailor a software engineer CV for this role.\n"
-            "5. RED FLAGS: Mention anything in the JD that candidates should be aware of.\n"
-            "Use clear headers for each section."
-        ),
-        'general_system':  "You are a professional software engineering career coach. Answer in Hebrew.",
-        'leetcode_gen_system': (
-            "You are a LeetCode coach. Generate ONE LeetCode Medium problem.\n"
-            "Format EXACTLY:\nProblem: <name>\nDifficulty: Medium\nDescription: <desc>\nExamples:\n<ex>\nConstraints:\n<c>\n"
-            "SOLUTION_PLACEHOLDER\n<full Python solution with explanation>\n"
-            "Speak Hebrew for text, keep code in English."
-        ),
-        'leetcode_review_system': "You are a senior engineer reviewing a LeetCode solution. Check correctness, time/space complexity, edge cases, code quality. Be constructive. Answer in Hebrew.",
-        'python_teach_system': (
-            "You are a Python teacher. Teach the topic clearly with examples, then give ONE coding exercise. "
-            "Format: explanation, code example, then 'תרגיל: <exercise>'. Answer in Hebrew."
-        ),
-        'python_review_system': "You are a Python teacher reviewing a student solution. Give feedback on correctness, style, and improvements. Answer in Hebrew.",
-        'sysdesign_system': (
-            "You are a Staff Engineer conducting a System Design interview in Hebrew. "
-            "Do NOT give the answer. Ask ONE probing question at a time about: requirements, scale, "
-            "components (Load Balancer, DB, Cache, CDN, Queue), trade-offs, bottlenecks. "
-            "Give short feedback after each answer, then ask the next question. Conduct in Hebrew."
-        ),
-        'error': "❌ תקלה זמנית בשרת.",
-    },
-
-    'en': {
-        # UI
-        'welcome': (
-            "🎓 Welcome to Hiring Hero!\n"
-            "The bot that turns you into a developer every company wants to hire.\n\n"
-            "Choose what you'd like to do:"
-        ),
-        'interview_btn':  "🎙️ Mock Interview",
-        'task_btn':       "💻 Code Review",
-        'leetcode_btn':   "🧩 Daily LeetCode",
-        'cv_btn':         "📄 CV Analysis",
-        'jd_btn':         "🔍 JD Analyzer",
-        'python_btn':     "🐍 Learn Python",
-        'sysdesign_btn':  "🏗️ System Design",
-        'lang_btn':       "🌐 Switch to Hebrew",
-        'menu_btn':       "🏠 Main Menu",
-
-        # interview
-        'interview_start': "🏢 Interview started.\nHi, I'm your interviewer. Tell me about an interesting project, or shall we jump to technical questions?",
-
-        # task
-        'task_prompt': "💻 Send me your code and I'll perform a professional Code Review.",
-
-        # cv
-        'cv_prompt':      "📄 Send me your CV — plain text, PDF, or Word (.docx) file.\nI'll analyze it fully, give detailed feedback, and suggest concrete improvements.",
-        'cv_processing':  "⏳ Processing your file...",
-        'cv_unsupported': "❌ Unsupported format. Please send PDF, DOCX, or plain text.",
-        'cv_error_file':  "❌ Couldn't read the file. Please try again.",
-
-        # jd analyzer
-        'jd_prompt':     "🔍 Paste the Job Description text for the role you're targeting.\nI'll extract the most important keywords and tell you exactly what to highlight in your CV to pass the ATS scan.",
-        'jd_processing': "⏳ Analyzing the job description...",
-
-        # leetcode
-        'leetcode_intro':        "🧩 Generating LeetCode question...",
-        'leetcode_submit':       "Send me your solution in code and I'll review it with detailed feedback.",
-        'leetcode_solution_btn': "💡 Show Solution",
-        'leetcode_thinking':     "⏳ Reviewing your solution...",
-
-        # python
-        'python_intro':       "🐍 Choose a topic to learn:",
-        'python_topics': [
-            ("Variables & Types", "py_vars"),
-            ("Lists & Dicts",     "py_lists"),
-            ("Functions",         "py_funcs"),
-            ("OOP",               "py_oop"),
-            ("Decorators",        "py_deco"),
-            ("Async / Await",     "py_async"),
-            ("Generators",        "py_gen"),
-            ("Error Handling",    "py_errors"),
-        ],
-        'python_answer_prompt': "Answer the exercise above in Python code:",
-        'python_next_btn':      "➡️ Next Topic",
-
-        # system design
-        'sysdesign_intro': "🏗️ Choose a system to design:",
-        'sysdesign_topics': [
-            ("WhatsApp / Chat",        "sd_chat"),
-            ("URL Shortener",          "sd_url"),
-            ("Instagram / Image Feed", "sd_insta"),
-            ("YouTube / Streaming",    "sd_video"),
-            ("Uber / Ride Sharing",    "sd_uber"),
-            ("Google Search",          "sd_search"),
-        ],
-        'sysdesign_thinking': "🏗️ Processing your answer...",
-
-        # AI systems
-        'interview_system': "You are a Senior Tech Interviewer at a Top-Tier company. Conduct the interview in English. Ask ONE question at a time, give a short critique, then ask the next.",
-        'task_system':      "Perform a professional code review. Check complexity, clean code, and bugs. Answer in English.",
-        'cv_system': (
-            "You are an expert CV analyst and writer for software engineers. "
-            "Do the following in English:\n"
-            "1. ANALYSIS: Identify strengths and weaknesses in the CV (structure, content, impact).\n"
-            "2. SCORE: Give an overall ATS score out of 10 with justification.\n"
-            "3. IMPROVEMENTS: List 5-7 specific, actionable improvements.\n"
-            "4. REWRITE: Rewrite the most important section (summary/experience) to be more impactful.\n"
-            "Use clear headers for each section."
-        ),
-        'jd_system': (
-            "You are an ATS and recruitment expert. Analyze the job description and do the following in English:\n"
-            "1. TOP KEYWORDS: Extract the 10-15 most important technical and soft-skill keywords the ATS will scan for.\n"
-            "2. MUST-HAVES: List required skills/experience the candidate must highlight.\n"
-            "3. NICE-TO-HAVES: List preferred skills that give a competitive edge.\n"
-            "4. CV TIPS: Give 4-5 specific tips on how to tailor a software engineer CV for this role.\n"
-            "5. RED FLAGS: Mention anything in the JD that candidates should be aware of.\n"
-            "Use clear headers for each section."
-        ),
-        'general_system':  "You are a professional software engineering career coach. Answer in English.",
-        'leetcode_gen_system': (
-            "You are a LeetCode coach. Generate ONE LeetCode Medium problem.\n"
-            "Format EXACTLY:\nProblem: <name>\nDifficulty: Medium\nDescription: <desc>\nExamples:\n<ex>\nConstraints:\n<c>\n"
-            "SOLUTION_PLACEHOLDER\n<full Python solution with explanation>\nSpeak English."
-        ),
-        'leetcode_review_system': "You are a senior engineer reviewing a LeetCode solution. Check correctness, time/space complexity, edge cases, code quality. Be constructive. Answer in English.",
-        'python_teach_system': (
-            "You are a Python teacher. Teach the topic clearly with examples, then give ONE coding exercise. "
-            "Format: explanation, code example, then 'Exercise: <exercise>'. Answer in English."
-        ),
-        'python_review_system': "You are a Python teacher reviewing a student solution. Give feedback on correctness, style, and improvements. Answer in English.",
-        'sysdesign_system': (
-            "You are a Staff Engineer conducting a System Design interview in English. "
-            "Do NOT give the answer. Ask ONE probing question at a time about: requirements, scale, "
-            "components (Load Balancer, DB, Cache, CDN, Queue), trade-offs, bottlenecks. "
-            "Give short feedback after each answer, then ask the next question. Conduct in English."
-        ),
-        'error': "❌ Temporary server error.",
-    }
+# ═══════════════════════════════════════════════════════════════════════════
+#  SYSTEM DESIGN BANK
+# ═══════════════════════════════════════════════════════════════════════════
+SD_QUESTIONS = {
+    'WhatsApp / Chat': [
+        {'q':'🏗️ 10M messages/sec — what handles the load?',
+         'options':['Single DB','Message Queue (Kafka)','More RAM','Bigger server'],'answer':1,
+         'tip':'✅ Message Queue decouples producers from consumers and handles massive throughput.'},
+        {'q':'🏗️ Store chat history for 2B users?',
+         'options':['One MySQL','NoSQL + sharding (Cassandra)','Files on disk','Redis only'],'answer':1,
+         'tip':'✅ Cassandra scales horizontally, optimized for time-series message data.'},
+        {'q':'🏗️ How to detect if a user is online?',
+         'options':['Poll DB every second','WebSocket heartbeat + Redis TTL','SMS ping','Email check'],'answer':1,
+         'tip':'✅ WebSocket keeps persistent connection; Redis TTL expires if heartbeat stops.'},
+    ],
+    'URL Shortener': [
+        {'q':'🏗️ How to generate a unique short code?',
+         'options':['Random number','Base62 of auto-increment ID','MD5 hash','UUID'],'answer':1,
+         'tip':'✅ Base62 gives 56B combos from a 6-char code.'},
+        {'q':'🏗️ 100M redirects/day — where to cache?',
+         'options':['MySQL','Redis (in-memory)','Hard disk','CDN only'],'answer':1,
+         'tip':'✅ Redis stores key-value pairs in memory — sub-millisecond lookups.'},
+        {'q':'🏗️ Same URL submitted twice?',
+         'options':['Two short URLs','Return same short URL','Return error','Ask the user'],'answer':1,
+         'tip':'✅ Check if URL exists first — return existing short code (idempotent).'},
+    ],
+    'Instagram / Feed': [
+        {'q':'🏗️ User uploads photo — what processes it?',
+         'options':['Sync API call','Async worker + S3','Store in MySQL','Email it'],'answer':1,
+         'tip':'✅ Async workers (SQS + Lambda) process/resize; S3 stores originals.'},
+        {'q':'🏗️ Generate feed for 500M users?',
+         'options':['Query DB on every load','Pre-compute in Redis (fan-out)','Send emails','GraphQL only'],'answer':1,
+         'tip':'✅ Fan-out on write: push new posts to followers\' caches when posted.'},
+        {'q':'🏗️ Images load slowly in Brazil — what do you add?',
+         'options':['Bigger US server','CDN (CloudFront)','Compress to 1px','Nothing'],'answer':1,
+         'tip':'✅ CDN caches static content at edge locations near users globally.'},
+    ],
+    'YouTube / Video': [
+        {'q':'🏗️ Serve 4K video at multiple qualities?',
+         'options':['Send original to all','Transcode async (360p/720p/1080p)','Compress to 240p','Stream raw bytes'],'answer':1,
+         'tip':'✅ Async transcoding creates multiple resolutions; client picks based on bandwidth.'},
+        {'q':'🏗️ Video has 1B views — store count efficiently?',
+         'options':['UPDATE in MySQL per view','Redis counter + batch flush','Count from logs','Ignore'],'answer':1,
+         'tip':'✅ Redis INCR is atomic and fast; batch-flush to DB periodically.'},
+    ],
+    'Uber / Ride': [
+        {'q':'🏗️ Match rider to nearest driver?',
+         'options':['Loop all drivers','Geospatial index (Redis GEO)','Call each driver','Random pick'],'answer':1,
+         'tip':'✅ Redis GEO stores coordinates and finds nearest in O(log n).'},
+        {'q':'🏗️ 1M drivers updating location every 5 sec?',
+         'options':['Write to MySQL each update','Write to Redis, async flush','Ignore old locations','Use cookies'],'answer':1,
+         'tip':'✅ Redis handles millions of writes/sec; async workers persist to DB in batches.'},
+    ],
 }
 
-PYTHON_TOPICS = {
-    'py_vars': "Variables & Types", 'py_lists': "Lists & Dicts",
-    'py_funcs': "Functions",        'py_oop':   "OOP",
-    'py_deco':  "Decorators",       'py_async': "Async / Await",
-    'py_gen':   "Generators",       'py_errors':"Error Handling",
-}
-SYSDESIGN_TOPICS = {
-    'sd_chat':  "WhatsApp / Chat App",       'sd_url':    "URL Shortener",
-    'sd_insta': "Instagram / Image Feed",    'sd_video':  "YouTube / Video Streaming",
-    'sd_uber':  "Uber / Ride Sharing",       'sd_search': "Google Search",
-}
+# ═══════════════════════════════════════════════════════════════════════════
+#  INTERVIEW QUESTIONS
+# ═══════════════════════════════════════════════════════════════════════════
+INTERVIEW_QUESTIONS = [
+    {'q':'🎙️ Difference between `==` and `===` in JavaScript?',
+     'options':['== value only (loose)','=== value AND type (strict)','Same thing','== for strings only'],'correct':[0,1],
+     'tip':'✅ == coerces types (1=="1" true), === does not. Always prefer ===.'},
+    {'q':'🎙️ What is Big O notation?',
+     'options':['Code quality grade','Algorithm time/space complexity','A sorting algorithm','A DB query language'],'correct':[1],
+     'tip':'✅ Big O describes how runtime/memory grows with input size.'},
+    {'q':'🎙️ Difference between process and thread?',
+     'options':['Process has own memory; threads share','Threads are slower','Process is part of thread','Identical'],'correct':[0],
+     'tip':'✅ Processes are isolated; threads share memory and are lighter.'},
+    {'q':'🎙️ What is REST?',
+     'options':['A language','HTTP-based API architecture','A DB type','A JS framework'],'correct':[1],
+     'tip':'✅ REST uses HTTP verbs (GET/POST/PUT/DELETE) and stateless requests.'},
+    {'q':'🎙️ What is a deadlock?',
+     'options':['Server crash','Two processes waiting for each other forever','A sorting bug','Memory full'],'correct':[1],
+     'tip':'✅ Process A waits for B, B waits for A — neither can proceed.'},
+    {'q':'🎙️ SQL vs NoSQL?',
+     'options':['SQL is newer','SQL structured/relational; NoSQL flexible/scalable','NoSQL uses tables','Same thing'],'correct':[1],
+     'tip':'✅ SQL: strict schema, ACID. NoSQL: flexible schema, horizontal scale.'},
+    {'q':'🎙️ What is a closure?',
+     'options':['Closes a file','Function that remembers outer scope','A type of loop','Class destructor'],'correct':[1],
+     'tip':'✅ A closure keeps outer variables alive after the outer function returns.'},
+    {'q':'🎙️ What is the CAP theorem?',
+     'options':['CPU, API, Partition','Consistency, Availability, Partition — pick 2','Cache, Auth, Performance','A Python lib'],'correct':[1],
+     'tip':'✅ Distributed systems can guarantee only 2 of 3: C, A, P.'},
+]
 
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+#  MULTIPLAYER GAME ROOMS
+# ═══════════════════════════════════════════════════════════════════════════
+# rooms[code] = {
+#   'host': chat_id,
+#   'players': {chat_id: {'name': str, 'score': int, 'answered': int}},
+#   'questions': [...],
+#   'q_idx': int,
+#   'active': bool,
+#   'answered_this_round': set(),
+# }
+game_rooms   = {}
+player_rooms = {}  # chat_id -> room_code
+
+def gen_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+
+def get_display_name(chat_id):
+    try:
+        info = bot.get_chat(chat_id)
+        name = info.first_name or ''
+        if info.last_name: name += f' {info.last_name}'
+        return name or f'Player_{str(chat_id)[-4:]}'
+    except Exception:
+        return f'Player_{str(chat_id)[-4:]}'
+
+def rank_emoji(i):
+    return ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'][i] if i < 10 else f'{i+1}.'
+
+def title_for_score(score, total):
+    pct = score / total if total else 0
+    if pct == 1.0: return '🏆 Legend!'
+    if pct >= 0.8: return '🔥 Pro!'
+    if pct >= 0.5: return '💪 Rising Star!'
+    return '📚 Keep Learning!'
+
+def broadcast_room(code, text, markup=None, exclude=None):
+    room = game_rooms.get(code)
+    if not room: return
+    for cid in list(room['players']):
+        if exclude and cid == exclude: continue
+        try:
+            if markup:
+                bot.send_message(cid, text, reply_markup=markup)
+            else:
+                bot.send_message(cid, text)
+        except Exception:
+            pass
+
+def send_leaderboard(code):
+    """Send leaderboard after each question."""
+    room = game_rooms.get(code)
+    if not room: return
+    players = sorted(room['players'].items(), key=lambda x: -x[1]['score'])
+    total_q = room['q_idx']  # questions done so far
+    lines = [f"📊 *Leaderboard — after Q{total_q}:*\n"]
+    for i, (cid, p) in enumerate(players):
+        lines.append(f"{rank_emoji(i)} {p['name']} — {p['score']} pts")
+    broadcast_room(code, '\n'.join(lines))
+
+def send_game_question(code):
+    room = game_rooms.get(code)
+    if not room: return
+    idx       = room['q_idx']
+    questions = room['questions']
+    if idx >= len(questions):
+        end_game(code)
+        return
+    q = questions[idx]
+    total = len(questions)
+    room['answered_this_round'] = set()
+    room['timer_active'] = True
+    m = abcd_btn(q['options'], f'game_ans:{code}')
+    broadcast_room(code, f"*Q{idx+1}/{total}*\n\n{q['q']}\n\n⏱️ 30 seconds!", markup=m)
+
+    # 30-second timer in background thread
+    import threading
+    def timer_end():
+        time.sleep(30)
+        r = game_rooms.get(code)
+        if not r or not r.get('timer_active'): return
+        if r['q_idx'] != idx: return  # already moved on
+        # Time's up — show who didn't answer
+        missed = [p['name'] for cid, p in r['players'].items()
+                  if cid not in r['answered_this_round']]
+        if missed:
+            broadcast_room(code, f"⏰ Time's up! No answer from: {', '.join(missed)}")
+        r['q_idx'] += 1
+        r['timer_active'] = False
+        send_leaderboard(code)
+        time.sleep(2)
+        send_game_question(code)
+    threading.Thread(target=timer_end, daemon=True).start()
+
+def end_game(code):
+    room = game_rooms.get(code)
+    if not room: return
+    room['active'] = False
+    players = sorted(room['players'].items(), key=lambda x: -x[1]['score'])
+    total   = len(room['questions'])
+    lines   = ["🏁 *Game Over! Final Scores:*\n"]
+    for i, (cid, p) in enumerate(players):
+        lines.append(f"{rank_emoji(i)} {p['name']} — {p['score']}/{total} {title_for_score(p['score'], total)}")
+    result = '\n'.join(lines)
+    m = types.InlineKeyboardMarkup()
+    m.add(types.InlineKeyboardButton("🏠 Menu", callback_data='menu'))
+    broadcast_room(code, result, markup=m)
+    # cleanup
+    for cid in list(room['players']):
+        player_rooms.pop(cid, None)
+        user_states.pop(cid, None)
+    game_rooms.pop(code, None)
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  STATE
-# ═══════════════════════════════════════════════════════════
-user_states        = {}
-user_histories     = {}
-user_langs         = {}
-user_leet_question = {}
-user_leet_solution = {}
-user_python_topic  = {}
+# ═══════════════════════════════════════════════════════════════════════════
+user_states   = {}
+user_langs    = {}
+user_sessions = {}
 
 def get_lang(c): return user_langs.get(c, 'en')
-def txt(c, k):   return TEXTS[get_lang(c)][k]
-
-# ═══════════════════════════════════════════════════════════
-#  MENUS
-# ═══════════════════════════════════════════════════════════
-def main_menu(c):
-    L = TEXTS[get_lang(c)]
-    m = types.InlineKeyboardMarkup(row_width=1)
-    m.add(
-        types.InlineKeyboardButton(L['interview_btn'],  callback_data='start_interview'),
-        types.InlineKeyboardButton(L['task_btn'],       callback_data='check_task'),
-        types.InlineKeyboardButton(L['leetcode_btn'],   callback_data='leetcode'),
-        types.InlineKeyboardButton(L['cv_btn'],         callback_data='fix_cv'),
-        types.InlineKeyboardButton(L['jd_btn'],         callback_data='jd_analyze'),
-        types.InlineKeyboardButton(L['python_btn'],     callback_data='python'),
-        types.InlineKeyboardButton(L['sysdesign_btn'],  callback_data='sysdesign'),
-        types.InlineKeyboardButton(L['lang_btn'],       callback_data='toggle_lang'),
-    )
-    return m
-
-def back_btn(c):
-    m = types.InlineKeyboardMarkup()
-    m.add(types.InlineKeyboardButton(txt(c, 'menu_btn'), callback_data='go_menu'))
-    return m
-
-def leetcode_btns(c):
-    m = types.InlineKeyboardMarkup(row_width=2)
-    m.add(
-        types.InlineKeyboardButton(txt(c, 'leetcode_solution_btn'), callback_data='leet_show_solution'),
-        types.InlineKeyboardButton(txt(c, 'menu_btn'),              callback_data='go_menu'),
-    )
-    return m
-
-def python_topics_menu(c):
-    m = types.InlineKeyboardMarkup(row_width=2)
-    for label, cb in txt(c, 'python_topics'):
-        m.add(types.InlineKeyboardButton(label, callback_data=cb))
-    m.add(types.InlineKeyboardButton(txt(c, 'menu_btn'), callback_data='go_menu'))
-    return m
-
-def python_after_btns(c):
-    m = types.InlineKeyboardMarkup(row_width=2)
-    m.add(
-        types.InlineKeyboardButton(txt(c, 'python_next_btn'), callback_data='python'),
-        types.InlineKeyboardButton(txt(c, 'menu_btn'),        callback_data='go_menu'),
-    )
-    return m
-
-def sysdesign_topics_menu(c):
-    m = types.InlineKeyboardMarkup(row_width=2)
-    for label, cb in txt(c, 'sysdesign_topics'):
-        m.add(types.InlineKeyboardButton(label, callback_data=cb))
-    m.add(types.InlineKeyboardButton(txt(c, 'menu_btn'), callback_data='go_menu'))
-    return m
-
-# ═══════════════════════════════════════════════════════════
-#  HELPERS
-# ═══════════════════════════════════════════════════════════
-def safe_send(c, text, reply_markup=None):
-    try:
-        bot.send_message(c, text, parse_mode="Markdown", reply_markup=reply_markup)
-    except Exception:
-        clean = text.replace("*","").replace("_","").replace("`","").replace("~","")
-        bot.send_message(c, clean, reply_markup=reply_markup)
 
 def call_ai(system, user, temp=0.6):
     r = client.chat.completions.create(
@@ -332,13 +301,12 @@ def call_ai(system, user, temp=0.6):
     )
     return r.choices[0].message.content
 
-def call_ai_history(messages, temp=0.6):
-    r = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=messages,
-        temperature=temp,
-    )
-    return r.choices[0].message.content
+def safe_send(c, text, reply_markup=None):
+    try:
+        bot.send_message(c, text, parse_mode="Markdown", reply_markup=reply_markup)
+    except Exception:
+        clean = text.replace("*","").replace("_","").replace("`","").replace("~","")
+        bot.send_message(c, clean, reply_markup=reply_markup)
 
 def extract_pdf(path):
     import fitz
@@ -360,130 +328,380 @@ def download_file(file_id):
     tmp.close()
     return tmp.name, suffix.lower()
 
-# ═══════════════════════════════════════════════════════════
-#  HANDLERS
-# ═══════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+#  MENUS
+# ═══════════════════════════════════════════════════════════════════════════
+def main_menu(c):
+    m = types.InlineKeyboardMarkup(row_width=2)
+    m.add(
+        types.InlineKeyboardButton("🎙️ Mock Interview", callback_data='interview'),
+        types.InlineKeyboardButton("🐍 Python Trivia",  callback_data='python_menu'),
+        types.InlineKeyboardButton("🏗️ System Design",  callback_data='sysdesign'),
+        types.InlineKeyboardButton("🧩 LeetCode",       callback_data='leetcode'),
+        types.InlineKeyboardButton("📄 CV Analysis",    callback_data='cv'),
+        types.InlineKeyboardButton("🔍 JD Analyzer",    callback_data='jd'),
+    )
+    return m
+
+def back_btn(c=None):
+    m = types.InlineKeyboardMarkup()
+    m.add(types.InlineKeyboardButton("🏠 Menu", callback_data='menu'))
+    return m
+
+def abcd_btn(options, prefix):
+    labels = ["🅐","🅑","🅒","🅓"]
+    m = types.InlineKeyboardMarkup(row_width=2)
+    btns = [types.InlineKeyboardButton(f"{labels[i]} {opt[:28]}", callback_data=f"{prefix}:{i}") for i, opt in enumerate(options)]
+    m.add(*btns)
+    return m
+
+def sd_topic_menu():
+    m = types.InlineKeyboardMarkup(row_width=2)
+    for name in SD_QUESTIONS:
+        m.add(types.InlineKeyboardButton(name, callback_data=f"sd_topic:{name}"))
+    m.add(types.InlineKeyboardButton("🏠 Menu", callback_data='menu'))
+    return m
+
+def python_mode_menu():
+    m = types.InlineKeyboardMarkup(row_width=1)
+    m.add(
+        types.InlineKeyboardButton("👤 Solo — Practice alone", callback_data='python_solo'),
+        types.InlineKeyboardButton("🎮 Create Multiplayer Game", callback_data='python_create'),
+        types.InlineKeyboardButton("🔗 Join a Game", callback_data='python_join'),
+        types.InlineKeyboardButton("🏠 Menu", callback_data='menu'),
+    )
+    return m
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  QUIZ SENDERS
+# ═══════════════════════════════════════════════════════════════════════════
+def send_solo_question(c):
+    s     = user_sessions[c]
+    idx   = s['q_idx']
+    qs    = s['questions']
+    if idx >= len(qs):
+        score = s['score']
+        total = len(qs)
+        bot.send_message(c,
+            f"✅ Done! {score}/{total} — {title_for_score(score, total)}",
+            reply_markup=back_btn())
+        user_states[c] = None
+        return
+    q = qs[idx]
+    bot.send_message(c, f"*Q{idx+1}/{len(qs)}*\n\n{q['q']}",
+                     parse_mode="Markdown",
+                     reply_markup=abcd_btn(q['options'], 'solo_ans'))
+
+def send_sd_question(c):
+    s     = user_sessions[c]
+    topic = s['topic']
+    idx   = s['q_idx']
+    qs    = SD_QUESTIONS.get(topic, [])
+    if idx >= len(qs):
+        score = s['score']
+        total = len(qs)
+        msg = f"🏗️ Done! {score}/{total} — {title_for_score(score, total)}"
+        bot.send_message(c, msg, reply_markup=back_btn())
+        user_states[c] = None
+        return
+    q = qs[idx]
+    bot.send_message(c, f"*Q{idx+1}/{len(qs)}*\n\n{q['q']}",
+                     parse_mode="Markdown",
+                     reply_markup=abcd_btn(q['options'], 'sd_ans'))
+
+def send_interview_question(c):
+    s   = user_sessions[c]
+    idx = s['q_idx']
+    if idx >= len(INTERVIEW_QUESTIONS):
+        score = s['score']
+        total = len(INTERVIEW_QUESTIONS)
+        bot.send_message(c,
+            f"🎙️ Interview done! {score}/{total} — {title_for_score(score, total)}",
+            reply_markup=back_btn())
+        user_states[c] = None
+        return
+    q = INTERVIEW_QUESTIONS[idx]
+    bot.send_message(c, f"*Q{idx+1}/{len(INTERVIEW_QUESTIONS)}*\n\n{q['q']}",
+                     parse_mode="Markdown",
+                     reply_markup=abcd_btn(q['options'], 'iv_ans'))
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  COMMAND HANDLERS
+# ═══════════════════════════════════════════════════════════════════════════
 @bot.message_handler(commands=['start', 'menu'])
 def send_welcome(message):
     c = message.chat.id
-    user_states[c] = None; user_histories[c] = []
-    bot.send_message(c, txt(c, 'welcome'), reply_markup=main_menu(c))
+    user_states[c] = None
+    player_rooms.pop(c, None)
+    bot.send_message(c, "🎓 Welcome to *DevBoost Career Coach*!\nChoose what you'd like to do:",
+                     parse_mode="Markdown", reply_markup=main_menu(c))
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  CALLBACK HANDLER
+# ═══════════════════════════════════════════════════════════════════════════
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
     c    = call.message.chat.id
     data = call.data
     bot.answer_callback_query(call.id)
 
-    # ── menu / lang ──
-    if data == 'go_menu':
-        user_states[c] = None; user_histories[c] = []
-        bot.send_message(c, txt(c, 'welcome'), reply_markup=main_menu(c))
-        return
-    if data == 'toggle_lang':
-        user_langs[c]  = 'en' if get_lang(c) == 'he' else 'he'
-        user_states[c] = None; user_histories[c] = []
-        bot.send_message(c, txt(c, 'welcome'), reply_markup=main_menu(c))
-        return
-
-    # ── interview ──
-    if data == 'start_interview':
-        user_states[c]    = 'INTERVIEW'
-        user_histories[c] = [{"role":"system","content":txt(c,'interview_system')}]
-        safe_send(c, txt(c, 'interview_start'), reply_markup=back_btn(c))
-
-    # ── code review ──
-    elif data == 'check_task':
-        user_states[c] = 'TASK'
-        bot.send_message(c, txt(c, 'task_prompt'), reply_markup=back_btn(c))
-
-    # ── cv ──
-    elif data == 'fix_cv':
-        user_states[c] = 'CV'
-        bot.send_message(c, txt(c, 'cv_prompt'), reply_markup=back_btn(c))
-
-    # ── jd analyzer ──
-    elif data == 'jd_analyze':
-        user_states[c] = 'JD'
-        bot.send_message(c, txt(c, 'jd_prompt'), reply_markup=back_btn(c))
-
-    # ── leetcode ──
-    elif data == 'leetcode':
-        user_states[c] = 'LEET_WAIT'
-        bot.send_message(c, txt(c, 'leetcode_intro'))
-        bot.send_chat_action(c, 'typing')
-        try:
-            full = call_ai(txt(c,'leetcode_gen_system'), "Generate a problem now.")
-            if 'SOLUTION_PLACEHOLDER' in full:
-                parts = full.split('SOLUTION_PLACEHOLDER')
-                q, s  = parts[0].strip(), parts[1].strip() if len(parts)>1 else ""
-            else:
-                q, s = full, ""
-            user_leet_question[c] = q
-            user_leet_solution[c] = s
-            user_states[c]        = 'LEET_SOLVING'
-            safe_send(c, q)
-            bot.send_message(c, txt(c,'leetcode_submit'), reply_markup=leetcode_btns(c))
-        except Exception as e:
-            print(f"LeetCode error: {e}")
-            bot.send_message(c, txt(c,'error'), reply_markup=back_btn(c))
-            user_states[c] = None
-
-    elif data == 'leet_show_solution':
-        s   = user_leet_solution.get(c, "")
-        msg = f"Solution:\n\n{s}" if s else "No solution saved."
-        safe_send(c, msg, reply_markup=back_btn(c))
+    # ── Menu ──
+    if data == 'menu':
         user_states[c] = None
+        bot.send_message(c, "Choose what you'd like to do:", reply_markup=main_menu(c))
+        return
 
-    # ── python ──
-    elif data == 'python':
-        bot.send_message(c, txt(c,'python_intro'), reply_markup=python_topics_menu(c))
+    # ════════════════════════════════════════════════════
+    #  PYTHON TRIVIA
+    # ════════════════════════════════════════════════════
+    if data == 'python_menu':
+        bot.send_message(c, "🐍 *Python Trivia* — choose mode:", parse_mode="Markdown",
+                         reply_markup=python_mode_menu())
+        return
 
-    elif data in PYTHON_TOPICS:
-        topic = PYTHON_TOPICS[data]
-        user_python_topic[c] = topic
-        user_states[c]       = 'PYTHON_EXERCISE'
+    # ── Solo ──
+    if data == 'python_solo':
+        qs = random.sample(ALL_QUESTIONS, min(10, len(ALL_QUESTIONS)))
+        user_sessions[c] = {'questions': qs, 'q_idx': 0, 'score': 0}
+        user_states[c]   = 'SOLO'
+        bot.send_message(c, "🐍 Solo mode! 10 random questions. Let's go!")
+        send_solo_question(c)
+        return
+
+    if data.startswith('solo_ans:'):
+        if user_states.get(c) != 'SOLO': return
+        chosen = int(data.split(':')[1])
+        s  = user_sessions[c]
+        q  = s['questions'][s['q_idx']]
+        labels = ["🅐","🅑","🅒","🅓"]
+        if chosen == q['answer']:
+            s['score'] += 1
+            bot.send_message(c, f"✅ Correct! {q['tip']}")
+        else:
+            bot.send_message(c, f"❌ Wrong! Answer: {labels[q['answer']]} {q['options'][q['answer']]}\n{q['tip']}")
+        s['q_idx'] += 1
+        time.sleep(0.4)
+        send_solo_question(c)
+        return
+
+    # ── Create Multiplayer ──
+    if data == 'python_create':
+        code = gen_code()
+        name = get_display_name(c)
+        qs   = random.sample(ALL_QUESTIONS, min(10, len(ALL_QUESTIONS)))
+        game_rooms[code] = {
+            'host': c,
+            'players': {c: {'name': name, 'score': 0, 'answered': 0}},
+            'questions': qs,
+            'q_idx': 0,
+            'active': False,
+            'answered_this_round': set(),
+        }
+        player_rooms[c] = code
+        user_states[c]  = 'GAME_LOBBY'
+        m = types.InlineKeyboardMarkup()
+        m.add(types.InlineKeyboardButton("🚀 Start Game!", callback_data=f'game_start:{code}'))
+        m.add(types.InlineKeyboardButton("❌ Cancel",       callback_data='game_cancel'))
+        bot.send_message(c,
+            f"🎮 *Game created!*\n\n"
+            f"Share this code with friends:\n"
+            f"┌─────────────┐\n"
+            f"│  *{code}*  │\n"
+            f"└─────────────┘\n\n"
+            f"Players joined: 1 (you)\n"
+            f"Press *Start* when everyone is in!",
+            parse_mode="Markdown", reply_markup=m)
+        return
+
+    if data.startswith('game_start:'):
+        code = data.split(':')[1]
+        room = game_rooms.get(code)
+        if not room or room['host'] != c: return
+        if len(room['players']) < 1:
+            bot.send_message(c, "⚠️ Need at least 1 player!")
+            return
+        room['active'] = True
+        n = len(room['players'])
+        names = ', '.join(p['name'] for p in room['players'].values())
+        broadcast_room(code, f"🚀 *Game starts!*\n👥 {n} players: {names}\n\n10 questions. Good luck! 🍀")
+        time.sleep(1)
+        send_game_question(code)
+        return
+
+    if data == 'game_cancel':
+        code = player_rooms.get(c)
+        if code and game_rooms.get(code, {}).get('host') == c:
+            broadcast_room(code, "❌ Game cancelled by host.", exclude=c)
+            for cid in list(game_rooms[code]['players']):
+                player_rooms.pop(cid, None)
+                user_states.pop(cid, None)
+            game_rooms.pop(code, None)
+        user_states[c] = None
+        bot.send_message(c, "Cancelled.", reply_markup=back_btn())
+        return
+
+    # ── Join Multiplayer ──
+    if data == 'python_join':
+        user_states[c] = 'JOIN_WAIT'
+        bot.send_message(c, "🔗 Type the 5-letter game code:")
+        return
+
+    # ── Game Answer ──
+    if data.startswith('game_ans:'):
+        parts  = data.split(':')
+        code   = parts[1]
+        chosen = int(parts[2])
+        room   = game_rooms.get(code)
+        if not room or not room['active']: return
+        if c not in room['players']: return
+        if c in room['answered_this_round']:
+            bot.answer_callback_query(call.id, "⏳ Already answered!")
+            return
+        room['answered_this_round'].add(c)
+        q      = room['questions'][room['q_idx']]
+        labels = ["🅐","🅑","🅒","🅓"]
+        player = room['players'][c]
+        player['answered'] += 1
+        if chosen == q['answer']:
+            player['score'] += 1
+            bot.send_message(c, f"✅ Correct! +1 point 🎉\n{q['tip']}")
+        else:
+            bot.send_message(c, f"❌ Wrong! Correct: {labels[q['answer']]} {q['options'][q['answer']]}\n{q['tip']}")
+        # All answered? Move on immediately (don't wait for timer)
+        if len(room['answered_this_round']) >= len(room['players']):
+            room['timer_active'] = False
+            room['q_idx'] += 1
+            time.sleep(1)
+            send_leaderboard(code)
+            time.sleep(2)
+            send_game_question(code)
+        return
+
+    # ════════════════════════════════════════════════════
+    #  SYSTEM DESIGN
+    # ════════════════════════════════════════════════════
+    if data == 'sysdesign':
+        bot.send_message(c, "🏗️ Choose a system to design:", reply_markup=sd_topic_menu())
+        return
+
+    if data.startswith('sd_topic:'):
+        topic = data.split(':', 1)[1]
+        user_sessions[c] = {'topic': topic, 'q_idx': 0, 'score': 0}
+        user_states[c]   = 'SYSDESIGN'
+        send_sd_question(c)
+        return
+
+    if data.startswith('sd_ans:'):
+        if user_states.get(c) != 'SYSDESIGN': return
+        chosen  = int(data.split(':')[1])
+        s       = user_sessions[c]
+        q       = SD_QUESTIONS[s['topic']][s['q_idx']]
+        labels  = ["🅐","🅑","🅒","🅓"]
+        if chosen == q['answer']:
+            s['score'] += 1
+            bot.send_message(c, f"✅ Correct!\n{q['tip']}")
+        else:
+            bot.send_message(c, f"❌ Wrong! Answer: {labels[q['answer']]} {q['options'][q['answer']]}\n{q['tip']}")
+        s['q_idx'] += 1
+        time.sleep(0.4)
+        send_sd_question(c)
+        return
+
+    # ════════════════════════════════════════════════════
+    #  MOCK INTERVIEW
+    # ════════════════════════════════════════════════════
+    if data == 'interview':
+        user_sessions[c] = {'q_idx': 0, 'score': 0}
+        user_states[c]   = 'INTERVIEW'
+        bot.send_message(c, "🎙️ Mock Interview — 8 questions. Tap your answer!")
+        send_interview_question(c)
+        return
+
+    if data.startswith('iv_ans:'):
+        if user_states.get(c) != 'INTERVIEW': return
+        chosen  = int(data.split(':')[1])
+        s       = user_sessions[c]
+        q       = INTERVIEW_QUESTIONS[s['q_idx']]
+        labels  = ["🅐","🅑","🅒","🅓"]
+        if chosen in q['correct']:
+            s['score'] += 1
+            bot.send_message(c, f"✅ Correct!\n{q['tip']}")
+        else:
+            correct_txt = ' / '.join(f"{labels[i]} {q['options'][i]}" for i in q['correct'])
+            bot.send_message(c, f"❌ Wrong! Answer: {correct_txt}\n{q['tip']}")
+        s['q_idx'] += 1
+        time.sleep(0.4)
+        send_interview_question(c)
+        return
+
+    # ════════════════════════════════════════════════════
+    #  LEETCODE (Easy, button-driven)
+    # ════════════════════════════════════════════════════
+    if data == 'leetcode':
+        user_states[c] = 'LEET_WAIT'
+        bot.send_message(c, "🧩 Generating an Easy LeetCode question...")
         bot.send_chat_action(c, 'typing')
         try:
-            lesson = call_ai(txt(c,'python_teach_system'), f"Teach me about: {topic}")
-            safe_send(c, lesson)
-            bot.send_message(c, txt(c,'python_answer_prompt'), reply_markup=back_btn(c))
+            system = (
+                "You are a LeetCode coach. Give ONE Easy problem. "
+                "Mobile-friendly: max 5 lines description, 1 example. "
+                "Format strictly:\nProblem: <name>\nDescription: <text>\nExample: Input: ... Output: ...\nSOLUTION_PLACEHOLDER\n<Python solution, max 10 lines>"
+            )
+            full = call_ai(system, "Generate an Easy LeetCode problem now.")
+            if 'SOLUTION_PLACEHOLDER' in full:
+                q, sol = full.split('SOLUTION_PLACEHOLDER', 1)
+            else:
+                q, sol = full, ""
+            user_sessions[c] = {'leet_q': q.strip(), 'leet_sol': sol.strip()}
+            user_states[c]   = 'LEET_DONE'
+            m = types.InlineKeyboardMarkup(row_width=2)
+            m.add(
+                types.InlineKeyboardButton("💡 Show Solution", callback_data='leet_sol'),
+                types.InlineKeyboardButton("🔄 New Question",  callback_data='leetcode'),
+                types.InlineKeyboardButton("🏠 Menu",          callback_data='menu'),
+            )
+            safe_send(c, q.strip(), reply_markup=m)
         except Exception as e:
-            print(f"Python error: {e}")
-            bot.send_message(c, txt(c,'error'), reply_markup=back_btn(c))
+            bot.send_message(c, f"❌ Error: {e}", reply_markup=back_btn())
+        return
 
-    # ── system design ──
-    elif data == 'sysdesign':
-        bot.send_message(c, txt(c,'sysdesign_intro'), reply_markup=sysdesign_topics_menu(c))
+    if data == 'leet_sol':
+        sol = user_sessions.get(c, {}).get('leet_sol', 'No solution saved.')
+        safe_send(c, f"💡 *Solution:*\n\n{sol}", reply_markup=back_btn())
+        user_states[c] = None
+        return
 
-    elif data in SYSDESIGN_TOPICS:
-        system_name = SYSDESIGN_TOPICS[data]
-        user_states[c]    = 'SYSDESIGN'
-        user_histories[c] = [
-            {"role":"system","content":txt(c,'sysdesign_system')},
-            {"role":"user",  "content":f"I want to design: {system_name}"},
-        ]
-        bot.send_chat_action(c, 'typing')
-        try:
-            resp = call_ai_history(user_histories[c])
-            user_histories[c].append({"role":"assistant","content":resp})
-            safe_send(c, resp, reply_markup=back_btn(c))
-        except Exception as e:
-            print(f"SysDesign error: {e}")
-            bot.send_message(c, txt(c,'error'), reply_markup=back_btn(c))
+    # ════════════════════════════════════════════════════
+    #  CV & JD
+    # ════════════════════════════════════════════════════
+    if data == 'cv':
+        user_states[c] = 'CV'
+        bot.send_message(c,
+            "📄 Send me your CV — paste as text, or upload a PDF/Word file.\n"
+            "I'll give you an ATS score + quick improvements.",
+            reply_markup=back_btn())
+        return
 
-# ── documents ──
+    if data == 'jd':
+        user_states[c] = 'JD'
+        bot.send_message(c,
+            "🔍 Paste the Job Description.\n"
+            "I'll extract keywords + what to highlight in your CV.",
+            reply_markup=back_btn())
+        return
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  DOCUMENT HANDLER
+# ═══════════════════════════════════════════════════════════════════════════
 @bot.message_handler(content_types=['document'])
 def handle_document(message):
     c     = message.chat.id
     state = user_states.get(c)
-
     if state not in ('CV', 'JD'):
         user_states[c] = 'CV'
-        bot.send_message(c, txt(c,'cv_prompt'), reply_markup=back_btn(c))
+        bot.send_message(c, "📄 Send your CV file.", reply_markup=back_btn())
         return
-
-    bot.send_message(c, txt(c,'cv_processing'))
+    bot.send_message(c, "⏳ Processing...")
     try:
         path, suffix = download_file(message.document.file_id)
         if suffix == '.pdf':
@@ -491,77 +709,82 @@ def handle_document(message):
         elif suffix in ('.docx', '.doc'):
             content = extract_docx(path)
         else:
-            bot.send_message(c, txt(c,'cv_unsupported'), reply_markup=back_btn(c))
+            bot.send_message(c, "❌ Send PDF, DOCX, or plain text.", reply_markup=back_btn())
             return
         os.unlink(path)
         if not content.strip():
-            bot.send_message(c, txt(c,'cv_error_file'), reply_markup=back_btn(c))
+            bot.send_message(c, "❌ Couldn't read file.", reply_markup=back_btn())
             return
-        bot.send_chat_action(c, 'typing')
-        system_key = 'cv_system' if state == 'CV' else 'jd_system'
-        resp = call_ai(txt(c, system_key), content)
-        safe_send(c, resp, reply_markup=back_btn(c))
-        user_states[c] = None
+        _process_cv_or_jd(c, content, state)
     except Exception as e:
-        import traceback; traceback.print_exc()
-        bot.send_message(c, f"Error: {e}", reply_markup=back_btn(c))
+        bot.send_message(c, f"❌ Error: {e}", reply_markup=back_btn())
 
-# ── text messages ──
+# ═══════════════════════════════════════════════════════════════════════════
+#  TEXT HANDLER
+# ═══════════════════════════════════════════════════════════════════════════
 @bot.message_handler(func=lambda m: True)
 def handle_messages(message):
     c     = message.chat.id
     state = user_states.get(c)
+    text  = message.text.strip()
     try:
         bot.send_chat_action(c, 'typing')
 
-        if state == 'INTERVIEW':
-            user_histories[c].append({"role":"user","content":message.text})
-            resp = call_ai_history(user_histories[c])
-            user_histories[c].append({"role":"assistant","content":resp})
-            safe_send(c, resp, reply_markup=back_btn(c))
+        # Waiting for join code
+        if state == 'JOIN_WAIT':
+            code = text.upper()
+            room = game_rooms.get(code)
+            if not room:
+                bot.send_message(c, "❌ Game not found. Check the code.", reply_markup=back_btn())
+                return
+            if room['active']:
+                bot.send_message(c, "❌ Game already started.", reply_markup=back_btn())
+                return
+            name = get_display_name(c)
+            room['players'][c] = {'name': name, 'score': 0, 'answered': 0}
+            player_rooms[c]    = code
+            user_states[c]     = 'GAME_LOBBY'
+            n = len(room['players'])
+            bot.send_message(c, f"✅ Joined game *{code}*!\nWaiting for host to start... ({n} players)", parse_mode="Markdown")
+            # Notify host
+            host = room['host']
+            m = types.InlineKeyboardMarkup()
+            m.add(types.InlineKeyboardButton("🚀 Start Game!", callback_data=f'game_start:{code}'))
+            m.add(types.InlineKeyboardButton("❌ Cancel",       callback_data='game_cancel'))
+            try:
+                bot.send_message(host,
+                    f"👋 *{name}* joined! ({n} players total)\nPress Start when ready!",
+                    parse_mode="Markdown", reply_markup=m)
+            except Exception:
+                pass
+            return
 
-        elif state == 'TASK':
-            resp = call_ai(txt(c,'task_system'), message.text)
-            safe_send(c, resp, reply_markup=back_btn(c))
-            user_states[c] = None
-
-        elif state == 'CV':
-            resp = call_ai(txt(c,'cv_system'), message.text)
-            safe_send(c, resp, reply_markup=back_btn(c))
-            user_states[c] = None
-
+        if state == 'CV':
+            _process_cv_or_jd(c, text, 'CV')
         elif state == 'JD':
-            bot.send_message(c, txt(c,'jd_processing'))
-            resp = call_ai(txt(c,'jd_system'), message.text)
-            safe_send(c, resp, reply_markup=back_btn(c))
-            user_states[c] = None
-
-        elif state == 'LEET_SOLVING':
-            bot.send_message(c, txt(c,'leetcode_thinking'))
-            q    = user_leet_question.get(c, "")
-            resp = call_ai(txt(c,'leetcode_review_system'), f"Question:\n{q}\n\nSolution:\n{message.text}")
-            safe_send(c, resp, reply_markup=leetcode_btns(c))
-
-        elif state == 'PYTHON_EXERCISE':
-            topic = user_python_topic.get(c, "Python")
-            resp  = call_ai(txt(c,'python_review_system'), f"Topic: {topic}\n\nStudent solution:\n{message.text}")
-            safe_send(c, resp, reply_markup=python_after_btns(c))
-            user_states[c] = None
-
-        elif state == 'SYSDESIGN':
-            bot.send_message(c, txt(c,'sysdesign_thinking'))
-            user_histories[c].append({"role":"user","content":message.text})
-            resp = call_ai_history(user_histories[c])
-            user_histories[c].append({"role":"assistant","content":resp})
-            safe_send(c, resp, reply_markup=back_btn(c))
-
+            _process_cv_or_jd(c, text, 'JD')
         else:
-            resp = call_ai(txt(c,'general_system'), message.text)
-            safe_send(c, resp, reply_markup=back_btn(c))
-
+            system = "You are a software engineering career coach. Answer concisely — max 5 lines."
+            resp = call_ai(system, text)
+            safe_send(c, resp, reply_markup=back_btn())
     except Exception as e:
-        print(f"Error: {e}")
-        bot.send_message(c, f"Error: {e}", reply_markup=back_btn(c))
+        bot.send_message(c, f"❌ Error: {e}", reply_markup=back_btn())
 
-print("🤖 Hiring Hero Bot is running...")
+def _process_cv_or_jd(c, content, mode):
+    if mode == 'CV':
+        system = (
+            "You are a CV expert. Be concise and mobile-friendly.\n"
+            "Give:\n1. ATS Score: X/10\n2. Top 3 strengths\n3. Top 3 improvements (one line each)\n4. One rewritten bullet example.\nMax 20 lines."
+        )
+    else:
+        system = (
+            "You are an ATS expert. Be concise and mobile-friendly.\n"
+            "Give:\n1. Top 10 Keywords (comma separated)\n2. Must-haves (3 bullets)\n3. Top 3 CV tips for this role.\nMax 20 lines."
+        )
+    bot.send_chat_action(c, 'typing')
+    resp = call_ai(system, content)
+    safe_send(c, resp, reply_markup=back_btn())
+    user_states[c] = None
+
+print("🤖 DevBoost Career Coach is running...")
 bot.infinity_polling()
