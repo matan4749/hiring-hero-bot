@@ -241,6 +241,16 @@ def send_leaderboard_msg(code):
         lines.append(f"{rank_emoji(i)} *{p['name']}*\n`{score_bar(p['score'], q_done)}` {p['score']} pts\n")
     broadcast_room(code, '\n'.join(lines))
 
+def timer_bar(secs, total=30):
+    """Color progress bar: green → yellow → red."""
+    filled = round((secs / total) * 15)
+    empty  = 15 - filled
+    if secs > 20:   color = "🟩"
+    elif secs > 8:  color = "🟨"
+    else:           color = "🟥"
+    bar = color * filled + "⬜" * empty
+    return f"{bar} *{secs}s*"
+
 def send_game_question(code):
     room = game_rooms.get(code)
     if not room: return
@@ -253,29 +263,48 @@ def send_game_question(code):
     total = len(qs)
     room['answered_this_round'] = set()
     room['timer_active']        = True
+    room['timer_msg_ids']       = {}  # cid -> msg_id
+
     m = question_markup(q['options'], f'game_ans:{code}', code=code)
     broadcast_room(code,
         f"*{DIV}*\n"
         f"🎮 *Q{idx+1} / {total}*\n"
         f"*{DIV}*\n\n"
-        f"{q['q']}\n\n"
-        f"⏱ *30 seconds — tap your answer!*",
+        f"{q['q']}",
         markup=m)
 
+    # Send timer message separately (so we can edit it)
+    time.sleep(0.3)
+    for cid in list(room['players']):
+        try:
+            msg = bot.send_message(cid, timer_bar(30), parse_mode="Markdown")
+            room['timer_msg_ids'][cid] = msg.message_id
+        except Exception:
+            pass
+
     def live_timer():
-        for secs in [20, 10, 5]:
-            time.sleep(10 if secs > 5 else 5)
+        for secs in range(29, 0, -1):
+            time.sleep(1)
             r = game_rooms.get(code)
             if not r or not r.get('timer_active') or r['q_idx'] != idx: return
-            answered = len(r['answered_this_round'])
-            total_p  = len(r['players'])
-            broadcast_room(code, f"⏱ *{secs}s left* — {answered}/{total_p} answered")
-        time.sleep(5)
+            bar_text = timer_bar(secs)
+            for cid, mid in list(r.get('timer_msg_ids', {}).items()):
+                try:
+                    bot.edit_message_text(bar_text, cid, mid, parse_mode="Markdown")
+                except Exception:
+                    pass
+
+        # Time's up
         r = game_rooms.get(code)
         if not r or not r.get('timer_active') or r['q_idx'] != idx: return
+        for cid, mid in list(r.get('timer_msg_ids', {}).items()):
+            try:
+                bot.edit_message_text("🔴 *TIME'S UP!*", cid, mid, parse_mode="Markdown")
+            except Exception:
+                pass
         missed = [p['name'] for cid, p in r['players'].items() if cid not in r['answered_this_round']]
         if missed:
-            broadcast_room(code, f"⏰ *Time's up!* No answer: _{', '.join(missed)}_")
+            broadcast_room(code, f"⏰ No answer from: _{', '.join(missed)}_")
         r['q_idx']       += 1
         r['timer_active']  = False
         time.sleep(1)
@@ -464,15 +493,35 @@ def send_solo_question(c):
         f"*{DIV}*\n"
         f"🐍 *Q{idx+1} / {len(qs)}*\n"
         f"*{DIV}*\n\n"
-        f"{q['q']}\n\n"
-        f"⏱ *30 seconds — tap your answer!*",
+        f"{q['q']}",
         parse_mode="Markdown", reply_markup=m)
 
+    # Live timer message
+    try:
+        timer_msg = bot.send_message(c, timer_bar(30), parse_mode="Markdown")
+        timer_mid = timer_msg.message_id
+    except Exception:
+        timer_mid = None
+
     def solo_timer(q_idx):
-        time.sleep(30)
+        for secs in range(29, 0, -1):
+            time.sleep(1)
+            if user_states.get(c) != 'SOLO': return
+            sess = user_sessions.get(c)
+            if not sess or sess['q_idx'] != q_idx: return
+            if timer_mid:
+                try:
+                    bot.edit_message_text(timer_bar(secs), c, timer_mid, parse_mode="Markdown")
+                except Exception:
+                    pass
         if user_states.get(c) != 'SOLO': return
         sess = user_sessions.get(c)
         if not sess or sess['q_idx'] != q_idx: return
+        if timer_mid:
+            try:
+                bot.edit_message_text("🔴 *TIME'S UP!*", c, timer_mid, parse_mode="Markdown")
+            except Exception:
+                pass
         bot.send_message(c, "⏰ *Time's up!* Moving on...", parse_mode="Markdown")
         sess['q_idx'] += 1
         time.sleep(0.5)
