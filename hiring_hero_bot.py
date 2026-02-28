@@ -788,7 +788,14 @@ def download_file(file_id):
 # ═══════════════════════════════════════════════════════════════════════════
 #  MENUS
 # ═══════════════════════════════════════════════════════════════════════════
-def main_menu(c):
+MENU_PHOTO = "https://github.com/matan4749/hiring-hero-bot/blob/main/Photo_Bot.jpg?raw=true"
+
+def send_main_menu(c, text):
+    try:
+        bot.send_photo(c, MENU_PHOTO, caption=text,
+                       parse_mode="Markdown", reply_markup=main_menu(c))
+    except Exception:
+        bot.send_message(c, text, parse_mode="Markdown", reply_markup=main_menu(c))
     lang = get_lang(c)
     m = types.InlineKeyboardMarkup(row_width=2)
     if lang == 'he':
@@ -1121,7 +1128,7 @@ def send_welcome(message):
         name = message.from_user.first_name or ''
     except Exception:
         name = ''
-    bot.send_message(c, welcome_text(c, name), parse_mode="Markdown", reply_markup=main_menu(c))
+    send_main_menu(c, welcome_text(c, name))
 
 @bot.message_handler(commands=['interview'])
 def cmd_interview(message):
@@ -1254,7 +1261,7 @@ def handle_callbacks(call):
             name = call.from_user.first_name or ''
         except Exception:
             name = ''
-        bot.send_message(c, welcome_text(c, name), parse_mode="Markdown", reply_markup=main_menu(c))
+        send_main_menu(c, welcome_text(c, name))
         return
 
     # ── Language ──
@@ -1262,7 +1269,7 @@ def handle_callbacks(call):
         user_langs[c] = 'he' if get_lang(c) == 'en' else 'en'
         lang = get_lang(c)
         txt = "🌐 *שפה שונתה לעברית* ✅" if lang == 'he' else "🌐 *Language set to English* ✅"
-        bot.send_message(c, txt, parse_mode="Markdown", reply_markup=main_menu(c))
+        send_main_menu(c, txt)
         return
 
     # ── About ──
