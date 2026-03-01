@@ -788,14 +788,26 @@ def download_file(file_id):
 # ═══════════════════════════════════════════════════════════════════════════
 #  MENUS
 # ═══════════════════════════════════════════════════════════════════════════
-MENU_PHOTO = "https://github.com/matan4749/hiring-hero-bot/blob/main/Photo_Bot.jpg?raw=true"
+MENU_PHOTO = "https://raw.githubusercontent.com/matan4749/hiring-hero-bot/main/Photo_Bot.jpg"
+
+MENU_PHOTO_URL = "https://raw.githubusercontent.com/matan4749/hiring-hero-bot/main/Photo_Bot.jpg"
+_MENU_PHOTO_CACHE = None
 
 def send_main_menu(c, text):
+    global _MENU_PHOTO_CACHE
     try:
-        bot.send_photo(c, MENU_PHOTO, caption=text,
-                       parse_mode="Markdown", reply_markup=main_menu(c))
+        if _MENU_PHOTO_CACHE is None:
+            r = requests.get(MENU_PHOTO_URL, timeout=10)
+            if r.status_code == 200:
+                _MENU_PHOTO_CACHE = r.content
+        if _MENU_PHOTO_CACHE:
+            import io
+            bot.send_photo(c, io.BytesIO(_MENU_PHOTO_CACHE), caption=text,
+                           parse_mode="Markdown", reply_markup=main_menu(c))
+            return
     except Exception:
-        bot.send_message(c, text, parse_mode="Markdown", reply_markup=main_menu(c))
+        pass
+    bot.send_message(c, text, parse_mode="Markdown", reply_markup=main_menu(c))
 
 def main_menu(c):
     lang = get_lang(c)
