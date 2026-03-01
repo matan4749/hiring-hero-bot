@@ -788,9 +788,9 @@ def download_file(file_id):
 # ═══════════════════════════════════════════════════════════════════════════
 #  MENUS
 # ═══════════════════════════════════════════════════════════════════════════
-MENU_PHOTO = "https://raw.githubusercontent.com/matan4749/hiring-hero-bot/main/Photo_Bot.jpg"
+MENU_PHOTO = "https://raw.githubusercontent.com/matan4749/hiring-hero-bot/main/IMG_8002.png"
 
-MENU_PHOTO_URL = "https://raw.githubusercontent.com/matan4749/hiring-hero-bot/main/Photo_Bot.jpg"
+MENU_PHOTO_URL = "https://raw.githubusercontent.com/matan4749/hiring-hero-bot/main/IMG_8002.png"
 _MENU_PHOTO_CACHE = None
 
 def send_main_menu(c, text):
