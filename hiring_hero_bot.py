@@ -796,6 +796,8 @@ def send_main_menu(c, text):
                        parse_mode="Markdown", reply_markup=main_menu(c))
     except Exception:
         bot.send_message(c, text, parse_mode="Markdown", reply_markup=main_menu(c))
+
+def main_menu(c):
     lang = get_lang(c)
     m = types.InlineKeyboardMarkup(row_width=2)
     if lang == 'he':
